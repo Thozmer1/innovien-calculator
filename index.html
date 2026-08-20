@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Innovien Solutions · Spread & Commission Calculator</title>
+  <style>
+    html, body { margin: 0; padding: 0; min-height: 100vh; }
+    body {
+      font-family: Calibri, 'Trebuchet MS', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      background: #F7F7F5;
+      color: #3D3D3D;
+      font-feature-settings: 'tnum';
+      font-variant-numeric: tabular-nums;
+    }
+    * { box-sizing: border-box; }
+    input[type='number']::-webkit-outer-spin-button,
+    input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type='number'] { -moz-appearance: textfield; }
+    .cell-hover { transition: background 0.15s ease; cursor: pointer; }
+    .cell-hover:hover { background: #EFF5E2; }
+    .cell-hover:hover .arrow { opacity: 1; transform: translateX(0); }
+    .arrow { opacity: 0; transform: translateX(-4px); transition: all 0.15s ease; }
+    /* Persistent dashed underline signals "editable"; solid + accent-color on focus */
+    .input-line, .input-line-amber, .input-line-olive, .input-line-forest {
+      border-bottom: 2px dashed #B4C99A;
+      transition: border-color 0.15s ease, border-bottom-style 0.15s ease;
+      padding-bottom: 2px;
+    }
+    .input-line:focus, .input-line-amber:focus, .input-line-olive:focus, .input-line-forest:focus {
+      border-bottom-style: solid; outline: none;
+    }
+    .input-line:focus        { border-bottom-color: #5E8528; }
+    .input-line-amber:focus  { border-bottom-color: #B8860B; }
+    .input-line-olive:focus  { border-bottom-color: #525C46; }
+    .input-line-forest:focus { border-bottom-color: #3D5A1F; }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 1px rgba(176,221,102,0.35), 0 0 24px -8px rgba(176,221,102,0.55); }
+      50%      { box-shadow: 0 0 0 1px rgba(176,221,102,0.55), 0 0 32px -4px rgba(176,221,102,0.75); }
+    }
+    .live-dot { animation: pulse-glow 2s ease-in-out infinite; }
+    .ghost-btn:hover { color: #1F1F1F; border-color: #5E8528; background: #EFF5E2; }
+    .role-btn:hover { color: #1F1F1F; }
+    .row-link { transition: background 0.15s ease; }
+    .row-link:hover { background: #F5F5F3; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .fade-in { animation: fadeIn 0.2s ease; }
+    #loader { display:flex; align-items:center; justify-content:center; min-height:100vh; color:#747777; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="loader">Loading Innovien Calculator…</div></div>
+
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.0/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo } = React;
+
+    /* ============================================================
+       BAKED-IN CONFIGURATION
+       To update rates, edit the values below and re-save the file.
+       Then re-upload to SharePoint.
+       ============================================================ */
+    const SETTINGS = {
+      domestic: {
+        // Base burden multipliers on pay rate (Bill − Pay × Burden × Hours)
+        burdens: { W2_NoBenefits: 1.22, W2_Benefits: 1.25, C2C: 1.10 },
+        // RTX-only: +10% on top of base burden for RTX rebate placements
+        rtxRebate: 0.10,
+        // Federal-only: +5% baked in to cover federal holidays paid by Innovien
+        federalHolidayBurden: 0.05,
+      },
+      nearshore: {
+        innovienExpPct: 0.10,
+        weeksPerMonth: 4,
+        // C2C (contractor) add-on: added to domestic C2C burden (1.10) → 1.13 total for nearshore contractors.
+        // Available only where contractor arrangements are legally viable.
+        c2cBurdenAddon: 0.03,
+        countries: [
+          { id: 'argentina',  name: 'Argentina',  flag: '🇦🇷', socialPct: 0.2500, eor: 199,    vat: 0.00, aguinaldoPct: 0.0833 },
+          { id: 'chile',      name: 'Chile',      flag: '🇨🇱', socialPct: 0.1035, eor: 349,    vat: 0.00 },
+          { id: 'peru',       name: 'Peru',       flag: '🇵🇪', socialPct: 0.1330, eor: 349,    vat: 0.18 },
+          { id: 'uruguay',    name: 'Uruguay',    flag: '🇺🇾', socialPct: 0.1330, eor: 599,    vat: 0.22 },
+          { id: 'panama',     name: 'Panama',     flag: '🇵🇦', socialPct: 0.2470, eor: 349,    vat: 0.07 },
+          { id: 'ecuador',    name: 'Ecuador',    flag: '🇪🇨', socialPct: 0.2630, eor: 349,    vat: 0.00 },
+          { id: 'costarica',  name: 'Costa Rica', flag: '🇨🇷', socialPct: 0.3989, eor: 299,    vat: 0.13 },
+          { id: 'mexico',     name: 'Mexico',     flag: '🇲🇽', socialPct: 0.4427, eor: 349,    vat: 0.00 },
+          { id: 'colombia',   name: 'Colombia',   flag: '🇨🇴', socialPct: 0.5380, eor: 349,    vat: 0.19 },
+          { id: 'brazil',     name: 'Brazil',     flag: '🇧🇷', socialPct: 0.5580, eor: 349,    vat: 0.02 },
+          { id: 'canada',     name: 'Canada',     flag: '🇨🇦', socialPct: 0.1010, eor: 350,    vat: 0.00 },
+          { id: 'serbia',     name: 'Serbia',     flag: '🇷🇸', socialPct: 0.1550, eor: 380.41, vat: 0.00 },
+          { id: 'poland',     name: 'Poland',     flag: '🇵🇱', socialPct: 0.2300, eor: 349,    vat: 0.00 },
+          { id: 'uk',         name: 'UK',         flag: '🇬🇧', socialPct: 0.1800, eor: 349,    vat: 0.00 },
+          { id: 'france',     name: 'France',     flag: '🇫🇷', socialPct: 0.4500, eor: 349,    vat: 0.00 },
+          { id: 'spain',      name: 'Spain',      flag: '🇪🇸', socialPct: 0.3200, eor: 349,    vat: 0.00 },
+        ],
+      },
+      commission: {
+        tiersAM: [
+          { threshold: 4200, rate: 0.00 }, { threshold: 7000, rate: 0.07 },
+          { threshold: 10000, rate: 0.10 }, { threshold: 15000, rate: 0.15 },
+          { threshold: 20000, rate: 0.20 }, { threshold: 1000000, rate: 0.23 },
+        ],
+        tiersRecruiter: [
+          { threshold: 5500, rate: 0.00 }, { threshold: 7000, rate: 0.05 },
+          { threshold: 10000, rate: 0.07 }, { threshold: 15000, rate: 0.10 },
+          { threshold: 20000, rate: 0.15 }, { threshold: 10000000, rate: 0.20 },
+        ],
+        baseSalaryAM: 52500,
+        baseSalaryRecruiter: 45000,
+        weeksPerYear: 51.6,
+      },
+    };
+
+    /* ============================================================
+       DESIGN TOKENS — Innovien Brand
+       ============================================================ */
+    const C = {
+      bg: '#F7F7F5', card: '#FFFFFF', cardAlt: '#F5F5F3', cardHover: '#EFF5E2',
+      input: '#F6FBED', // ~12% Innovien Green tint — permanent bg for editable cells
+      inputMarker: '#5E8528', // marker text/icon color on input cards
+      border: '#C4C4C4', borderLt: '#E2E2E2',
+      text: '#1F1F1F', textDim: '#3D3D3D',
+      muted: '#747777', mutedDim: '#9A9A9A', mutedXDim: '#BFBFBF',
+      green: '#B0DD66', greenDk: '#5E8528',
+      teal: '#5E8528',   // Domestic accent
+      amber: '#B8860B',  // Commission accent
+      purple: '#525C46', // Nearshore accent
+      forest: '#3D5A1F', // Federal accent — deep forest green
+      red: '#8B4513',    // Negatives (no red fills per brand)
+    };
+    const FONT = "Calibri, 'Trebuchet MS', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+
+    /* ============================================================
+       STATIC METADATA
+       ============================================================ */
+    // Domestic tab scenarios only (Federal has its own tab)
+    const SCENARIOS = [
+      { id: 'NonRTX', label: 'Non-RTX',          short: 'Non-RTX', desc: 'Standard placements — base burden only' },
+      { id: 'RTX',    label: 'RTX (10% Rebate)', short: 'RTX',     desc: '+0.10 burden for RTX rebate positions' },
+    ];
+    const EMPLOYMENT_TYPES = [
+      { id: 'W2_NoBenefits', label: 'W2 — No Benefits', short: 'W2 NB' },
+      { id: 'W2_Benefits',   label: 'W2 — Benefits',    short: 'W2 B' },
+      { id: 'C2C',           label: 'C2C',              short: 'C2C' },
+    ];
+    const PERCENTILE_MARKERS = [
+      { spread: 20000, label: 'Top 25% US' }, { spread: 25000, label: 'Top 10% US' },
+      { spread: 40000, label: 'Top 5% US' },  { spread: 60000, label: 'Top 1% US' },
+    ];
+    const SENS_STEPS = [0.50, 1.00, 1.50];
+
+    /* ============================================================
+       INLINE SVG ICONS
+       ============================================================ */
+    const Icon = (path, viewBox) => ({ size = 16, color = 'currentColor', style = {}, className = '' }) => (
+      <svg width={size} height={size} viewBox={viewBox || '0 0 24 24'} fill="none"
+        stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        style={style} className={className}>
+        {path}
+      </svg>
+    );
+    const Calculator   = Icon(<><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="12" y1="10" x2="14" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="12" y1="14" x2="14" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="10" y2="18"/><line x1="12" y1="18" x2="14" y2="18"/><line x1="16" y1="18" x2="16" y2="18"/></>);
+    const TrendingUp   = Icon(<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>);
+    const Globe        = Icon(<><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>);
+    const Shield       = Icon(<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>);
+    const ArrowRight   = Icon(<><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>);
+    const Award        = Icon(<><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></>);
+    const ChevronDown  = Icon(<polyline points="6 9 12 15 18 9"/>);
+    const ChevronRight = Icon(<polyline points="9 18 15 12 9 6"/>);
+    const RotateCcw    = Icon(<><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></>);
+    const ArrowUpDown  = Icon(<><polyline points="7 15 12 20 17 15"/><polyline points="7 9 12 4 17 9"/></>);
+    const ArrowUp      = Icon(<><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></>);
+    const ArrowDown    = Icon(<><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></>);
+
+    /* ============================================================
+       FORMATTERS & MATH
+       ============================================================ */
+    const fmt$ = (n) => {
+      if (n === null || n === undefined || isNaN(n)) return '—';
+      const s = n < 0 ? '−' : '';
+      return s + '$' + Math.abs(Math.round(n)).toLocaleString();
+    };
+    const fmt$d = (n, d = 2) => {
+      if (n === null || n === undefined || isNaN(n)) return '—';
+      const s = n < 0 ? '−' : '';
+      return s + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+    };
+    const fmtPct = (n, d = 1) => (n * 100).toFixed(d) + '%';
+
+    function calcDomesticSpread(bill, pay, hours, scenario, employment, dom) {
+      let burden = dom.burdens[employment];
+      if (scenario === 'RTX') burden += dom.rtxRebate;
+      else if (scenario === 'Federal') burden += dom.federalHolidayBurden;
+      return (bill - pay * burden) * hours;
+    }
+    function calcNearshoreCountry(country, monthlySalary, monthlyBilling, ns, c2cBaseBurden) {
+      // --- EOR (employee) path — full country burden ---
+      const annualSalary = monthlySalary * 12;
+      const aguinaldo = country.aguinaldoPct ? (annualSalary * country.aguinaldoPct) / 12 : 0;
+      const socialExp = monthlySalary * country.socialPct + aguinaldo;
+      const innovienExp = ns.innovienExpPct * monthlySalary;
+      const totalMonthlyCost = monthlySalary + socialExp + country.eor + innovienExp;
+      const monthlySpread = monthlyBilling - totalMonthlyCost;
+      const weeklySpread = monthlySpread / ns.weeksPerMonth;
+
+      // --- C2C (contractor) path — flat burden, no social/EOR/Innovien-expense stack ---
+      const c2cBurden = c2cBaseBurden + ns.c2cBurdenAddon; // e.g., 1.10 + 0.03 = 1.13
+      const c2cMonthlyCost = monthlySalary * c2cBurden;
+      const c2cMonthlySpread = monthlyBilling - c2cMonthlyCost;
+      const c2cWeeklySpread = c2cMonthlySpread / ns.weeksPerMonth;
+
+      return {
+        socialExp, eor: country.eor, innovienExp, totalMonthlyCost, monthlySpread, weeklySpread,
+        c2cBurden, c2cMonthlyCost, c2cMonthlySpread, c2cWeeklySpread,
+      };
+    }
+    function calcCommission(spread, tiers) {
+      const bands = []; let total = 0, prev = 0;
+      for (let i = 0; i < tiers.length; i++) {
+        const { threshold, rate } = tiers[i];
+        const inBand = Math.max(0, Math.min(spread, threshold) - prev);
+        const effRate = i === 0 ? 0 : rate;
+        const commission = inBand * effRate;
+        bands.push({ start: prev, end: threshold, rate: effRate, inBand, commission, fullWidth: threshold - prev });
+        total += commission;
+        prev = threshold;
+      }
+      return { bands, total };
+    }
+
+    /* ============================================================
+       STYLE FRAGMENTS
+       ============================================================ */
+    const S = {
+      mono: { fontFamily: FONT, fontVariantNumeric: 'tabular-nums', fontFeatureSettings: "'tnum'" },
+      border: { border: `1px solid ${C.border}` },
+      borderB: { borderBottom: `1px solid ${C.border}` },
+      borderT: { borderTop: `1px solid ${C.border}` },
+      borderR: { borderRight: `1px solid ${C.border}` },
+      uppercase: (size = 10, sp = 0.3) => ({ fontSize: size, textTransform: 'uppercase', letterSpacing: `${sp}em`, color: C.muted }),
+    };
+
+    /* ============================================================
+       MAIN
+       ============================================================ */
+    function InnovienCalculator() {
+      const [tab, setTab] = useState('domestic');
+
+      const [billRate, setBillRate] = useState(118);
+      const [payRate, setPayRate]   = useState(75);
+      const [hours, setHours]       = useState(40);
+
+      const [nsBillRate, setNsBillRate] = useState(100);
+      const [nsHours, setNsHours]       = useState(160);
+      const [nsPayRate, setNsPayRate]   = useState(60);
+
+      const [fedBillRate, setFedBillRate] = useState(115);
+      const [fedPayRate, setFedPayRate]   = useState(65);
+      const [fedHours, setFedHours]       = useState(40);
+
+      const [role, setRole] = useState('AM');
+      const [commissionSpread, setCommissionSpread] = useState(20000);
+
+      const sendToCommission = (val) => {
+        setCommissionSpread(Math.max(0, Math.round(val)));
+        setTab('commission');
+      };
+
+      const resetInputs = () => {
+        setBillRate(118); setPayRate(75); setHours(40);
+        setNsBillRate(100); setNsHours(160); setNsPayRate(60);
+        setFedBillRate(115); setFedPayRate(65); setFedHours(40);
+        setCommissionSpread(20000);
+      };
+
+      return (
+        <div style={{ minHeight: '100vh', background: C.bg, color: C.textDim, ...S.mono }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 24px' }}>
+            <Header onResetInputs={resetInputs} />
+            <Tabs tab={tab} setTab={setTab} />
+            <InputLegend />
+
+            {tab === 'domestic' && (
+              <DomesticView
+                billRate={billRate} setBillRate={setBillRate}
+                payRate={payRate}   setPayRate={setPayRate}
+                hours={hours}       setHours={setHours}
+                domSettings={SETTINGS.domestic}
+                onUseInCommission={sendToCommission}
+              />
+            )}
+            {tab === 'nearshore' && (
+              <NearshoreView
+                billRate={nsBillRate} setBillRate={setNsBillRate}
+                hours={nsHours}       setHours={setNsHours}
+                payRate={nsPayRate}   setPayRate={setNsPayRate}
+                ns={SETTINGS.nearshore}
+                c2cBaseBurden={SETTINGS.domestic.burdens.C2C}
+                onUseInCommission={sendToCommission}
+              />
+            )}
+            {tab === 'federal' && (
+              <FederalView
+                billRate={fedBillRate} setBillRate={setFedBillRate}
+                payRate={fedPayRate}   setPayRate={setFedPayRate}
+                hours={fedHours}       setHours={setFedHours}
+                domSettings={SETTINGS.domestic}
+                onUseInCommission={sendToCommission}
+              />
+            )}
+            {tab === 'commission' && (
+              <CommissionView
+                role={role} setRole={setRole}
+                commissionSpread={commissionSpread} setCommissionSpread={setCommissionSpread}
+                comm={SETTINGS.commission}
+              />
+            )}
+
+            <Footer />
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       HEADER · TABS · FOOTER
+       ============================================================ */
+    function Header({ onResetInputs }) {
+      return (
+        <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, paddingBottom: 24, ...S.borderB }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div className="live-dot" style={{ width: 8, height: 8, background: C.green, borderRadius: '50%' }}></div>
+              <div style={S.uppercase(10, 0.32)}>Innovien Solutions · Internal Tools · Live Calculator Suite</div>
+            </div>
+            <h1 style={{ fontSize: 28, fontWeight: 700, color: C.text, margin: 0, letterSpacing: '-0.01em' }}>
+              Spread <span style={{ color: C.muted, fontWeight: 400 }}>&</span> Commission Calculator
+            </h1>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>
+              We just have a higher bar.
+            </div>
+          </div>
+          <button onClick={onResetInputs} className="ghost-btn"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+              fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em',
+              color: C.muted, background: 'transparent', border: `1px solid ${C.border}`, cursor: 'pointer',
+              transition: 'all 0.15s ease', ...S.mono,
+            }}>
+            <RotateCcw size={14} /> Reset Inputs
+          </button>
+        </header>
+      );
+    }
+
+    function Footer() {
+      return (
+        <footer style={{
+          marginTop: 48, paddingTop: 24, ...S.borderT,
+          display: 'flex', justifyContent: 'space-between',
+          fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.2em', color: C.mutedXDim,
+        }}>
+          <div>Innovien Solutions · v2.0 · Domestic + Nearshore + Commission</div>
+          <div>All values calculated live</div>
+        </footer>
+      );
+    }
+
+    function Tabs({ tab, setTab }) {
+      const items = [
+        { id: 'domestic',   icon: TrendingUp, label: 'Domestic Spread',   accent: C.teal },
+        { id: 'federal',    icon: Shield,     label: 'Federal Placement', accent: C.forest },
+        { id: 'nearshore',  icon: Globe,      label: 'Nearshore Spread',  accent: C.purple },
+        { id: 'commission', icon: Calculator, label: 'Weekly Commission', accent: C.amber },
+      ];
+      return (
+        <div style={{ display: 'flex', marginBottom: 32, ...S.borderB }}>
+          {items.map(it => (
+            <button key={it.id} onClick={() => setTab(it.id)}
+              style={{
+                position: 'relative', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '14px 20px', fontSize: 13, fontWeight: 500,
+                color: tab === it.id ? C.text : C.muted,
+                background: 'transparent', border: 'none', cursor: 'pointer', ...S.mono,
+              }}>
+              <it.icon size={16} color={tab === it.id ? it.accent : C.muted} />
+              <span>{it.label}</span>
+              {tab === it.id && <div style={{ position: 'absolute', bottom: -1, left: 0, right: 0, height: 2, background: it.accent }}></div>}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       INPUT LEGEND (one-line guide under the tab strip)
+       ============================================================ */
+    function InputLegend() {
+      return (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 20,
+          padding: '10px 14px', marginBottom: 20,
+          background: C.card, border: `1px solid ${C.borderLt}`,
+          fontSize: 11, color: C.muted, ...S.mono,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 22, height: 14, background: C.input, border: `1px solid ${C.border}` }}></div>
+            <span><span style={{ color: C.inputMarker, fontWeight: 700, marginRight: 4 }}>✎</span> Green cells = <strong style={{ color: C.text }}>your inputs</strong> (editable)</span>
+          </div>
+          <div style={{ width: 1, height: 16, background: C.borderLt }}></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 22, height: 14, background: C.card, border: `1px solid ${C.border}` }}></div>
+            <span>White cells = <strong style={{ color: C.text }}>calculated results</strong></span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       INPUT CELL
+       ============================================================ */
+    function InputCell({ label, suffix, value, setValue, step, isCount, accent = C.teal, focusClass = 'input-line' }) {
+      return (
+        <div style={{ background: C.input, padding: '20px 24px', position: 'relative' }}>
+          <div style={{
+            position: 'absolute', top: 10, right: 12, fontSize: 9, fontWeight: 700,
+            letterSpacing: '0.14em', color: C.inputMarker, display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            <span style={{ fontSize: 11 }}>✎</span> EDIT
+          </div>
+          <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>{label}</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            {!isCount && <span style={{ fontSize: 20, color: C.muted }}>$</span>}
+            <input
+              type="number" value={value} step={step}
+              onChange={(e) => setValue(parseFloat(e.target.value) || 0)}
+              className={focusClass}
+              style={{
+                background: 'transparent', color: accent, fontSize: 40, fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums', width: '100%', border: 'none', outline: 'none', ...S.mono,
+              }}
+            />
+            <span style={{ ...S.uppercase(10, 0.25), color: C.mutedDim, whiteSpace: 'nowrap' }}>{suffix}</span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       DOMESTIC VIEW
+       ============================================================ */
+    function DomesticView({ billRate, setBillRate, payRate, setPayRate, hours, setHours, domSettings, onUseInCommission }) {
+      const [openSens, setOpenSens] = useState({ NonRTX: true, RTX: false });
+
+      const matrix = useMemo(() => SCENARIOS.map(s => ({
+        ...s,
+        cells: EMPLOYMENT_TYPES.map(e => ({
+          ...e,
+          value: calcDomesticSpread(billRate, payRate, hours, s.id, e.id, domSettings),
+        })),
+      })), [billRate, payRate, hours, domSettings]);
+
+      return (
+        <div className="fade-in">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <InputCell label="Bill Rate"    suffix="/ HR" value={billRate} setValue={setBillRate} step={0.50} accent={C.teal} />
+            <InputCell label="Pay Rate"     suffix="/ HR" value={payRate}  setValue={setPayRate}  step={0.50} accent={C.teal} />
+            <InputCell label="Hours / Week" suffix="HRS"  value={hours}    setValue={setHours}    step={1} isCount accent={C.teal} />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={S.uppercase(10, 0.3)}>Gross Weekly Spread</div>
+              <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+                Bill − (Pay × Burden) × Hours, by placement type & employment structure
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>Click any cell → send to commission calc</div>
+          </div>
+
+          <div style={{ ...S.border, marginBottom: 40, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr 1fr', background: C.card }}>
+              <div style={{ padding: '12px 16px', ...S.uppercase(10, 0.25), color: C.mutedDim, ...S.borderR }}>Placement Type</div>
+              {EMPLOYMENT_TYPES.map((et, i) => (
+                <div key={et.id} style={{ padding: '12px 16px', ...S.uppercase(10, 0.25), ...(i < EMPLOYMENT_TYPES.length - 1 ? S.borderR : {}) }}>
+                  {et.label}
+                </div>
+              ))}
+            </div>
+            {matrix.map((row) => (
+              <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr 1fr', ...S.borderT }}>
+                <div style={{ padding: '20px 16px', ...S.borderR, background: C.card }}>
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 500, lineHeight: 1.2 }}>{row.short}</div>
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{row.desc}</div>
+                </div>
+                {row.cells.map((cell, i) => (
+                  <button key={cell.id} onClick={() => onUseInCommission(cell.value)} className="cell-hover"
+                    style={{
+                      padding: '20px 16px', textAlign: 'left', background: C.card, border: 'none',
+                      ...(i < row.cells.length - 1 ? S.borderR : {}), ...S.mono,
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1, color: cell.value < 0 ? C.red : C.teal, fontVariantNumeric: 'tabular-nums' }}>
+                          {fmt$(cell.value)}
+                        </div>
+                        <div style={{ ...S.uppercase(10, 0.2), color: C.mutedDim, marginTop: 8 }}>/week</div>
+                      </div>
+                      <ArrowRight size={16} color={C.teal} className="arrow" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={S.uppercase(10, 0.3)}>Sensitivity Analysis</div>
+              <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+                Spread impact of bill rate increases & pay rate reductions
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {SCENARIOS.map(s => (
+                <SensitivityBlock key={s.id} scenario={s}
+                  isOpen={openSens[s.id]}
+                  onToggle={() => setOpenSens({ ...openSens, [s.id]: !openSens[s.id] })}
+                  billRate={billRate} payRate={payRate} hours={hours}
+                  domSettings={domSettings} onUseInCommission={onUseInCommission}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SensitivityBlock({ scenario, isOpen, onToggle, billRate, payRate, hours, domSettings, onUseInCommission }) {
+      return (
+        <div style={{ ...S.border, background: C.card }}>
+          <button onClick={onToggle} className="row-link"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 20px', background: 'transparent', border: 'none', cursor: 'pointer',
+              ...S.mono, color: 'inherit',
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {isOpen ? <ChevronDown size={16} color={C.muted} /> : <ChevronRight size={16} color={C.muted} />}
+              <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{scenario.label}</span>
+              <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.muted }}>{scenario.desc}</span>
+            </div>
+          </button>
+
+          {isOpen && (
+            <div style={S.borderT}>
+              <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', background: C.cardAlt }}>
+                <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.25), color: C.mutedDim, ...S.borderR }}>Variant</div>
+                {EMPLOYMENT_TYPES.map((et, i) => (
+                  <div key={et.id} style={{ padding: '8px 16px', ...S.uppercase(10, 0.25), ...(i < EMPLOYMENT_TYPES.length - 1 ? S.borderR : {}) }}>
+                    {et.short}
+                  </div>
+                ))}
+              </div>
+              <SensitivityRow label="Base" sublabel="current inputs" highlight
+                billRate={billRate} payRate={payRate} hours={hours}
+                scenario={scenario} domSettings={domSettings} onUseInCommission={onUseInCommission} />
+              {SENS_STEPS.map(step => (
+                <SensitivityRow key={`b+${step}`} label={`+ $${step.toFixed(2)} Bill`} sublabel="bill rate up"
+                  billRate={billRate + step} payRate={payRate} hours={hours}
+                  scenario={scenario} domSettings={domSettings} onUseInCommission={onUseInCommission} />
+              ))}
+              {SENS_STEPS.map(step => (
+                <SensitivityRow key={`p-${step}`} label={`− $${step.toFixed(2)} Pay`} sublabel="pay rate down"
+                  billRate={billRate} payRate={payRate - step} hours={hours}
+                  scenario={scenario} domSettings={domSettings} onUseInCommission={onUseInCommission} />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function SensitivityRow({ label, sublabel, highlight, billRate, payRate, hours, scenario, domSettings, onUseInCommission }) {
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', ...S.borderT, background: highlight ? C.cardAlt : C.card }}>
+          <div style={{ padding: '12px 16px', ...S.borderR }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: highlight ? C.amber : C.textDim }}>{label}</div>
+            <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.mutedDim, marginTop: 2 }}>{sublabel}</div>
+          </div>
+          {EMPLOYMENT_TYPES.map((et, i) => {
+            const v = calcDomesticSpread(billRate, payRate, hours, scenario.id, et.id, domSettings);
+            return (
+              <button key={et.id} onClick={() => onUseInCommission(v)} className="cell-hover"
+                style={{
+                  padding: '12px 16px', textAlign: 'left', background: 'transparent', border: 'none',
+                  ...(i < EMPLOYMENT_TYPES.length - 1 ? S.borderR : {}),
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...S.mono,
+                }}>
+                <span style={{
+                  fontSize: 14, fontWeight: 500, fontVariantNumeric: 'tabular-nums',
+                  color: v < 0 ? C.red : (highlight ? C.teal : C.textDim),
+                }}>{fmt$(v)}</span>
+                <ArrowRight size={12} color={C.teal} className="arrow" />
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       FEDERAL VIEW
+       Federal placements always carry +5% federal-holiday burden.
+       Includes PTO break-even calculator: if consultant asks for
+       2 or 4 weeks of PTO, what pay rate keeps annual spread flat?
+       ============================================================ */
+    function FederalView({ billRate, setBillRate, payRate, setPayRate, hours, setHours, domSettings, onUseInCommission }) {
+      // Compute per-employment-type burden, weekly spread, and PTO break-even pay
+      const rows = useMemo(() => EMPLOYMENT_TYPES.map(et => {
+        const burden = domSettings.burdens[et.id] + domSettings.federalHolidayBurden;
+        const weeklySpread = (billRate - payRate * burden) * hours;
+        const annualSpread = weeklySpread * 52;
+        // NewPay = Pay − (P × Bill) / (52 × Burden)
+        const ptoOptions = [2, 4].map(weeks => {
+          const newPay = payRate - (weeks * billRate) / (52 * burden);
+          return { weeks, newPay, delta: newPay - payRate, feasible: newPay > 0 };
+        });
+        return { ...et, burden, weeklySpread, annualSpread, ptoOptions };
+      }), [billRate, payRate, hours, domSettings]);
+
+      return (
+        <div className="fade-in">
+          {/* Inputs */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <InputCell label="Bill Rate"    suffix="/ HR" value={billRate} setValue={setBillRate} step={0.50} accent={C.forest} focusClass="input-line-forest" />
+            <InputCell label="Pay Rate"     suffix="/ HR" value={payRate}  setValue={setPayRate}  step={0.50} accent={C.forest} focusClass="input-line-forest" />
+            <InputCell label="Hours / Week" suffix="HRS"  value={hours}    setValue={setHours}    step={1} isCount accent={C.forest} focusClass="input-line-forest" />
+          </div>
+
+          {/* Section 1: Standard Federal Spread */}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={S.uppercase(10, 0.3)}>Federal Placement — Weekly Spread</div>
+              <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+                Base burden + {fmtPct(domSettings.federalHolidayBurden, 0)} federal holiday burden baked in
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>Click any cell → send to commission calc</div>
+          </div>
+
+          <div style={{ ...S.border, marginBottom: 40, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: C.cardAlt }}>
+              {rows.map((r, i) => (
+                <div key={r.id} style={{ padding: '10px 16px', ...(i < rows.length - 1 ? S.borderR : {}), ...S.uppercase(10, 0.25) }}>
+                  {r.label}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', ...S.borderT }}>
+              {rows.map((r, i) => (
+                <button key={r.id} onClick={() => onUseInCommission(r.weeklySpread)} className="cell-hover"
+                  style={{
+                    padding: '20px 16px', textAlign: 'left', background: C.card, border: 'none',
+                    ...(i < rows.length - 1 ? S.borderR : {}), ...S.mono,
+                  }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: r.weeklySpread < 0 ? C.red : C.forest, fontVariantNumeric: 'tabular-nums' }}>
+                        {fmt$(r.weeklySpread)}
+                      </div>
+                      <div style={{ ...S.uppercase(10, 0.2), color: C.mutedDim, marginTop: 8 }}>/week · burden {r.burden.toFixed(2)}</div>
+                      <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>Annual: {fmt$(r.annualSpread)}</div>
+                    </div>
+                    <ArrowRight size={16} color={C.forest} className="arrow" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Section 2: PTO Break-Even Calculator */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={S.uppercase(10, 0.3)}>PTO Break-Even Pay Rate</div>
+            <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+              If the consultant requests PTO, what pay rate keeps the annual spread identical to no-PTO?
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 6, fontStyle: 'italic' }}>
+              Formula: NewPay = Pay − (P × Bill) ÷ (52 × Burden) &nbsp;·&nbsp; Assumes PTO weeks paid at pay rate, all 52 weeks of burden applies.
+            </div>
+          </div>
+
+          <div style={{ ...S.border, marginBottom: 12 }}>
+            {/* Header row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', background: C.cardAlt }}>
+              <div style={{ padding: '10px 16px', ...S.uppercase(10, 0.25), color: C.mutedDim, ...S.borderR }}>PTO Offering</div>
+              {rows.map((r, i) => (
+                <div key={r.id} style={{ padding: '10px 16px', ...S.uppercase(10, 0.25), ...(i < rows.length - 1 ? S.borderR : {}) }}>
+                  <div>{r.short}</div>
+                  <div style={{ fontSize: 9, color: C.mutedDim, marginTop: 2, letterSpacing: '0.06em' }}>burden {r.burden.toFixed(2)}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Baseline row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', ...S.borderT, background: C.card }}>
+              <div style={{ padding: '14px 16px', ...S.borderR }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>No PTO</div>
+                <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>baseline</div>
+              </div>
+              {rows.map((r, i) => (
+                <div key={r.id} style={{
+                  padding: '14px 16px', ...(i < rows.length - 1 ? S.borderR : {}),
+                  display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', ...S.mono,
+                }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{fmt$d(payRate)}/hr</div>
+                  <div style={{ fontSize: 10, color: C.mutedDim, textTransform: 'uppercase', letterSpacing: '0.05em' }}>pay in</div>
+                </div>
+              ))}
+            </div>
+
+            {/* PTO option rows */}
+            {[0, 1].map(idx => {
+              const weeks = rows[0].ptoOptions[idx].weeks;
+              return (
+                <div key={weeks} style={{ display: 'grid', gridTemplateColumns: '160px 1fr 1fr 1fr', ...S.borderT, background: C.card }}>
+                  <div style={{ padding: '14px 16px', ...S.borderR }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: C.forest }}>{weeks} Weeks PTO</div>
+                    <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>break-even pay</div>
+                  </div>
+                  {rows.map((r, i) => {
+                    const p = r.ptoOptions[idx];
+                    return (
+                      <div key={r.id} style={{
+                        padding: '14px 16px', ...(i < rows.length - 1 ? S.borderR : {}),
+                        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', ...S.mono,
+                      }}>
+                        <div style={{
+                          fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                          color: p.feasible ? C.forest : C.red,
+                        }}>
+                          {p.feasible ? `${fmt$d(p.newPay)}/hr` : 'N/A'}
+                        </div>
+                        <div style={{
+                          fontSize: 11, fontWeight: 500, fontVariantNumeric: 'tabular-nums',
+                          color: p.feasible ? C.muted : C.red,
+                        }}>
+                          Δ {p.feasible ? fmt$d(p.delta) : '—'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Note when any option is infeasible */}
+          {rows.some(r => r.ptoOptions.some(p => !p.feasible)) && (
+            <div style={{ fontSize: 11, color: C.red, lineHeight: 1.6, marginBottom: 8 }}>
+              <span style={{ fontWeight: 600 }}>⚠ N/A</span> means the PTO cost exceeds available pay — a bill-rate increase would be needed instead of a pay-rate cut.
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: C.mutedDim, lineHeight: 1.6 }}>
+            <span style={{ color: C.muted }}>How to use this:</span> Show the consultant the current pay rate ({fmt$d(payRate)}/hr) alongside the break-even pay for the PTO amount they're requesting. That's the rate the placement needs to land at for Innovien's spread to stay whole.
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       NEARSHORE VIEW
+       ============================================================ */
+    function NearshoreView({ billRate, setBillRate, hours, setHours, payRate, setPayRate, ns, c2cBaseBurden, onUseInCommission }) {
+      const [sortBy, setSortBy] = useState({ field: 'weeklySpread', dir: 'desc' });
+
+      const monthlySalary = payRate * hours;
+      const annualSalary = monthlySalary * 12;
+      const monthlyBilling = billRate * hours;
+      const c2cBurden = c2cBaseBurden + ns.c2cBurdenAddon;
+
+      const rows = useMemo(() => {
+        const computed = ns.countries.map(country => ({
+          ...country,
+          ...calcNearshoreCountry(country, monthlySalary, monthlyBilling, ns, c2cBaseBurden),
+        }));
+        const { field, dir } = sortBy;
+        computed.sort((a, b) => {
+          const av = a[field], bv = b[field];
+          if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+          return dir === 'asc' ? av - bv : bv - av;
+        });
+        return computed;
+      }, [ns, monthlySalary, monthlyBilling, sortBy, c2cBaseBurden]);
+
+      const eorPositive = rows.filter(r => r.weeklySpread > 0).length;
+      const c2cPositive = rows.filter(r => r.c2cWeeklySpread > 0).length;
+      const bestEorWeekly = rows.reduce((max, r) => r.weeklySpread > max ? r.weeklySpread : max, -Infinity);
+      const bestC2cWeekly = rows.reduce((max, r) => r.c2cWeeklySpread > max ? r.c2cWeeklySpread : max, -Infinity);
+
+      return (
+        <div className="fade-in">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 16 }}>
+            <InputCell label="Bill Rate"     suffix="/ HR" value={billRate} setValue={setBillRate} step={1} accent={C.purple} focusClass="input-line-olive" />
+            <InputCell label="Monthly Hours" suffix="HRS"  value={hours}    setValue={setHours}    step={1} isCount accent={C.purple} focusClass="input-line-olive" />
+            <InputCell label="Hourly Pay"    suffix="/ HR" value={payRate}  setValue={setPayRate}  step={1} accent={C.purple} focusClass="input-line-olive" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <DerivedStat label="Monthly Salary"  value={fmt$(monthlySalary)} sub="pay × hours" />
+            <DerivedStat label="Annual Salary"   value={fmt$(annualSalary)}  sub="monthly × 12" />
+            <DerivedStat label="Monthly Billing" value={fmt$(monthlyBilling)} sub="bill × hours" />
+            <DerivedStat label="EOR Profitable" value={`${eorPositive} of ${rows.length}`} sub={`Best: ${fmt$(bestEorWeekly)}/wk`} accent={eorPositive === 0 ? C.red : C.greenDk} />
+            <DerivedStat label="C2C Profitable" value={`${c2cPositive} of ${rows.length}`} sub={`Best: ${fmt$(bestC2cWeekly)}/wk · burden ${c2cBurden.toFixed(2)}`} accent={c2cPositive === 0 ? C.red : C.greenDk} />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={S.uppercase(10, 0.3)}>Country Spread Comparison</div>
+              <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+                Default view = <strong style={{ color: C.text }}>EOR</strong> (full employee via Employer of Record): salary + social/payroll + EOR fee + {fmtPct(ns.innovienExpPct, 0)} Innovien expense.
+                Rightmost column = <strong style={{ color: C.text }}>C2C</strong> alternative where contractor arrangement is legally viable (flat {fmtPct(c2cBurden - 1, 0)} burden, no social/EOR stack).
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>Click any weekly spread → send to commission calc</div>
+          </div>
+
+          <CountryTable rows={rows} sortBy={sortBy} setSortBy={setSortBy} onUseInCommission={onUseInCommission} />
+
+          <div style={{ marginTop: 16, fontSize: 11, color: C.mutedDim, lineHeight: 1.7 }}>
+            <div style={{ marginBottom: 6 }}>
+              <span style={{ color: C.purple, fontWeight: 600 }}>EOR:</span> employee brought on through Employer of Record. Includes full country social/payroll burden, flat monthly EOR fee (per Remofirst), and {fmtPct(ns.innovienExpPct, 0)} Innovien expense. Argentina includes 8.33% aguinaldo (13th-month bonus). VAT shown for reference; assumed passed through to client.
+            </div>
+            <div>
+              <span style={{ color: C.greenDk, fontWeight: 600 }}>C2C:</span> contractor arrangement where legally viable. Flat {fmtPct(c2cBurden - 1, 0)} burden ({fmtPct(c2cBaseBurden - 1, 0)} domestic C2C base + {fmtPct(ns.c2cBurdenAddon, 0)} nearshore add-on). No social payments, no EOR fee, no separate Innovien expense — the burden covers it.
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function DerivedStat({ label, value, sub, accent = C.textDim }) {
+      return (
+        <div style={{ background: C.card, padding: '16px 20px' }}>
+          <div style={{ ...S.uppercase(10, 0.3), marginBottom: 8 }}>{label}</div>
+          <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: accent, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+          <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 6 }}>{sub}</div>
+        </div>
+      );
+    }
+
+    function CountryTable({ rows, sortBy, setSortBy, onUseInCommission }) {
+      const cols = [
+        { key: 'name', label: 'Country', align: 'left', width: '170px', sortable: true },
+        { key: 'socialPct', label: 'Social %', align: 'right', width: '85px', sortable: true, fmt: (v) => fmtPct(v, 2), group: 'eor' },
+        { key: 'socialExp', label: 'Social $', align: 'right', width: '95px', sortable: true, fmt: fmt$, group: 'eor' },
+        { key: 'eor', label: 'EOR Fee', align: 'right', width: '80px', sortable: true, fmt: fmt$, group: 'eor' },
+        { key: 'innovienExp', label: 'Innov. Exp', align: 'right', width: '90px', sortable: true, fmt: fmt$, group: 'eor' },
+        { key: 'totalMonthlyCost', label: 'Total Cost', align: 'right', width: '105px', sortable: true, fmt: fmt$, group: 'eor' },
+        { key: 'monthlySpread', label: 'EOR Mo. Spread', align: 'right', width: '115px', sortable: true, fmt: fmt$, accent: true, group: 'eor' },
+        { key: 'weeklySpread', label: 'EOR Wk. Spread', align: 'right', width: '120px', sortable: true, fmt: fmt$, accent: true, clickable: true, group: 'eor' },
+        { key: 'c2cWeeklySpread', label: 'C2C Wk. Spread', align: 'right', width: '125px', sortable: true, fmt: fmt$, accent: true, clickable: true, group: 'c2c' },
+      ];
+      const totalWidth = cols.reduce((s, c) => s + parseInt(c.width), 0);
+
+      const handleSort = (field) => {
+        if (sortBy.field === field) setSortBy({ field, dir: sortBy.dir === 'asc' ? 'desc' : 'asc' });
+        else setSortBy({ field, dir: field === 'name' ? 'asc' : 'desc' });
+      };
+
+      const SortIcon = ({ field }) => {
+        if (sortBy.field !== field) return <ArrowUpDown size={10} color={C.mutedXDim} style={{ marginLeft: 4 }} />;
+        return sortBy.dir === 'asc'
+          ? <ArrowUp size={10} color={C.purple} style={{ marginLeft: 4 }} />
+          : <ArrowDown size={10} color={C.purple} style={{ marginLeft: 4 }} />;
+      };
+
+      // Divider style: thicker border where EOR group meets C2C group
+      const dividerStyle = (idx) => {
+        const isGroupBoundary = cols[idx] && cols[idx + 1] && cols[idx].group !== cols[idx + 1].group;
+        if (idx >= cols.length - 1) return {};
+        return isGroupBoundary
+          ? { borderRight: `3px double ${C.border}` }
+          : S.borderR;
+      };
+      const accentFor = (col) => col.group === 'c2c' ? C.greenDk : C.purple;
+
+      return (
+        <div style={{ ...S.border, overflow: 'auto', background: C.card }}>
+          {/* Group header row */}
+          <div style={{ minWidth: totalWidth, display: 'grid', gridTemplateColumns: cols.map(c => c.width).join(' '), background: C.cardAlt }}>
+            <div></div>
+            <div style={{
+              gridColumn: '2 / 9', padding: '6px 12px', ...S.uppercase(9, 0.18),
+              color: C.purple, textAlign: 'center', ...S.borderR,
+              borderRight: `3px double ${C.border}`,
+            }}>EOR (Employee via Employer of Record)</div>
+            <div style={{ padding: '6px 12px', ...S.uppercase(9, 0.18), color: C.greenDk, textAlign: 'center' }}>
+              C2C (Contractor)
+            </div>
+          </div>
+          {/* Column labels row */}
+          <div style={{ minWidth: totalWidth, display: 'grid', gridTemplateColumns: cols.map(c => c.width).join(' '), background: C.cardAlt, ...S.borderT }}>
+            {cols.map((c, i) => (
+              <button key={c.key} onClick={() => c.sortable && handleSort(c.key)}
+                style={{
+                  padding: '10px 12px', ...S.uppercase(10, 0.2),
+                  color: sortBy.field === c.key ? accentFor(c) : C.mutedDim,
+                  textAlign: c.align, background: 'transparent', border: 'none', cursor: c.sortable ? 'pointer' : 'default',
+                  ...dividerStyle(i),
+                  display: 'flex', alignItems: 'center', justifyContent: c.align === 'right' ? 'flex-end' : 'flex-start',
+                  ...S.mono,
+                }}>
+                <span>{c.label}</span>
+                {c.sortable && <SortIcon field={c.key} />}
+              </button>
+            ))}
+          </div>
+          {rows.map((r) => (
+            <div key={r.id} style={{
+              minWidth: totalWidth, display: 'grid', gridTemplateColumns: cols.map(c => c.width).join(' '),
+              ...S.borderT,
+            }}>
+              {cols.map((c, i) => {
+                const raw = r[c.key];
+                const display = c.fmt ? c.fmt(raw) : raw;
+                const isSpreadKey = c.key === 'monthlySpread' || c.key === 'weeklySpread' || c.key === 'c2cWeeklySpread';
+                const isNeg = isSpreadKey && raw < 0;
+                const color = c.accent
+                  ? (isNeg ? C.red : accentFor(c))
+                  : (c.key === 'name' ? C.text : C.textDim);
+                const fontWeight = c.accent ? 600 : (c.key === 'name' ? 500 : 400);
+
+                if (c.key === 'name') {
+                  return (
+                    <div key={c.key} style={{
+                      padding: '12px 12px', ...dividerStyle(i),
+                      display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color, fontWeight,
+                    }}>
+                      <span style={{ fontSize: 18 }}>{r.flag}</span>
+                      <span>{r.name}</span>
+                    </div>
+                  );
+                }
+
+                if (c.clickable) {
+                  return (
+                    <button key={c.key} onClick={() => onUseInCommission(raw)} className="cell-hover"
+                      style={{
+                        padding: '12px 12px', textAlign: 'right', background: 'transparent', border: 'none',
+                        ...dividerStyle(i),
+                        display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+                        fontSize: 13, color, fontWeight, fontVariantNumeric: 'tabular-nums', ...S.mono,
+                      }}>
+                      <span>{display}</span>
+                      <ArrowRight size={11} color={accentFor(c)} className="arrow" />
+                    </button>
+                  );
+                }
+
+                return (
+                  <div key={c.key} style={{
+                    padding: '12px 12px', textAlign: c.align, fontSize: 13, color, fontWeight,
+                    fontVariantNumeric: 'tabular-nums', ...dividerStyle(i),
+                  }}>
+                    {display}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       COMMISSION VIEW
+       ============================================================ */
+    function CommissionView({ role, setRole, commissionSpread, setCommissionSpread, comm }) {
+      const activeTiers = role === 'AM' ? comm.tiersAM : comm.tiersRecruiter;
+      const activeBase  = role === 'AM' ? comm.baseSalaryAM : comm.baseSalaryRecruiter;
+      const commission  = useMemo(() => calcCommission(commissionSpread, activeTiers), [commissionSpread, activeTiers]);
+      const yearlyComm  = commission.total * comm.weeksPerYear;
+      const monthlyComm = commission.total * 4.3;
+      const totalComp   = yearlyComm + activeBase;
+      const effRate     = commissionSpread > 0 ? commission.total / commissionSpread : 0;
+
+      return (
+        <div className="fade-in">
+          <div style={{ display: 'grid', gridTemplateColumns: '3fr 3fr 2fr 2fr 2fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <div style={{ background: C.input, padding: '20px 24px', position: 'relative' }}>
+              <div style={{
+                position: 'absolute', top: 10, right: 12, fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.14em', color: C.inputMarker, display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 11 }}>▸</span> SELECT
+              </div>
+              <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>Role</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {[
+                  { id: 'AM', label: 'Account Manager' },
+                  { id: 'RECRUITER', label: 'Recruiter' },
+                ].map(r => (
+                  <button key={r.id} onClick={() => setRole(r.id)} className="role-btn"
+                    style={{
+                      textAlign: 'left', padding: '6px 0', background: 'transparent', border: 'none',
+                      fontSize: 14, fontWeight: role === r.id ? 600 : 400,
+                      color: role === r.id ? C.amber : C.muted,
+                      cursor: 'pointer', transition: 'color 0.15s ease', ...S.mono,
+                    }}>
+                    {role === r.id ? '▸ ' : '  '}{r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ background: C.input, padding: '20px 24px', position: 'relative' }}>
+              <div style={{
+                position: 'absolute', top: 10, right: 12, fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.14em', color: C.inputMarker, display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <span style={{ fontSize: 11 }}>✎</span> EDIT
+              </div>
+              <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>Weekly Spread</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontSize: 20, color: C.muted }}>$</span>
+                <input type="number" value={commissionSpread} step={500}
+                  onChange={(e) => setCommissionSpread(parseFloat(e.target.value) || 0)}
+                  className="input-line-amber"
+                  style={{
+                    background: 'transparent', color: C.amber, fontSize: 36, fontWeight: 700,
+                    fontVariantNumeric: 'tabular-nums', width: '100%', border: 'none', outline: 'none', ...S.mono,
+                  }} />
+              </div>
+              <div style={{ ...S.uppercase(10, 0.2), color: C.mutedDim, marginTop: 4 }}>total team weekly</div>
+            </div>
+
+            <Stat label="Weekly Comm."  value={fmt$d(commission.total)} accent={C.amber} />
+            <Stat label="Monthly Comm." value={fmt$d(monthlyComm)}      accent={C.textDim} />
+            <Stat label="Yearly Comm."  value={fmt$(yearlyComm)}        accent={C.textDim} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '7fr 5fr', gap: 24, marginBottom: 32 }}>
+            <div>
+              <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>Marginal Tier Breakdown</div>
+              <TierBreakdown bands={commission.bands} />
+              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted }}>
+                <div>Effective rate: <span style={{ color: C.textDim, fontVariantNumeric: 'tabular-nums' }}>{fmtPct(effRate, 2)}</span></div>
+                <div>Total weekly: <span style={{ color: C.amber, fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmt$d(commission.total)}</span></div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>Annual Compensation</div>
+              <div style={{ ...S.border, background: C.card }}>
+                <CompRow label="Base Salary"       value={fmt$(activeBase)}  accent={C.textDim} />
+                <CompRow label="Yearly Commission" value={fmt$(yearlyComm)}  accent={C.amber} divider />
+                <CompRow label="Total Comp"        value={fmt$(totalComp)}   accent={C.greenDk} big divider />
+              </div>
+              <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+                Yearly = weekly × {comm.weeksPerYear} (4.3 weeks/mo × 12 convention)
+              </div>
+            </div>
+          </div>
+
+          <PercentileLadder commissionSpread={commissionSpread} tiers={activeTiers} base={activeBase} weeksPerYear={comm.weeksPerYear} />
+        </div>
+      );
+    }
+
+    function Stat({ label, value, accent }) {
+      return (
+        <div style={{ background: C.card, padding: '20px 24px' }}>
+          <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>{label}</div>
+          <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: accent, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        </div>
+      );
+    }
+
+    function CompRow({ label, value, accent, big, divider }) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', ...(divider ? S.borderT : {}) }}>
+          <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.2em', color: big ? C.textDim : C.muted }}>{label}</div>
+          <div style={{ fontSize: big ? 24 : 16, fontWeight: 700, color: accent, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+        </div>
+      );
+    }
+
+    function TierBreakdown({ bands }) {
+      const max = Math.max(...bands.map(b => b.fullWidth), 1);
+      return (
+        <div style={{ ...S.border, background: C.card }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 90px', background: C.cardAlt }}>
+            <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, ...S.borderR }}>Band</div>
+            <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, ...S.borderR }}>Fill</div>
+            <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, ...S.borderR, textAlign: 'right' }}>Rate</div>
+            <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, textAlign: 'right' }}>Comm.</div>
+          </div>
+          {bands.map((b, i) => {
+            const fillPct = b.fullWidth > 0 ? (b.inBand / b.fullWidth) * 100 : 0;
+            const widthPct = (b.fullWidth / max) * 100;
+            const isActive = b.inBand > 0;
+            const accent = b.rate === 0 ? C.mutedXDim : C.green;
+            return (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 90px', ...S.borderT }}>
+                <div style={{ padding: '12px 16px', ...S.borderR }}>
+                  <div style={{ fontSize: 12, color: C.textDim, fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt$(b.start)} – {b.end >= 1000000 ? '∞' : fmt$(b.end)}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', ...S.borderR, display: 'flex', alignItems: 'center' }}>
+                  <div style={{ height: 20, background: C.cardAlt, position: 'relative', overflow: 'hidden', width: `${Math.min(widthPct, 100)}%`, minWidth: 40, border: `1px solid ${C.borderLt}` }}>
+                    <div style={{
+                      position: 'absolute', top: 0, bottom: 0, left: 0,
+                      width: `${fillPct}%`, background: accent,
+                      opacity: isActive ? 1 : 0.35, transition: 'width 0.3s ease',
+                    }}></div>
+                    <div style={{
+                      position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+                      display: 'flex', alignItems: 'center', padding: '0 8px',
+                      fontSize: 10, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: C.text,
+                    }}>{isActive && fmt$(b.inBand)}</div>
+                  </div>
+                </div>
+                <div style={{ padding: '12px 16px', ...S.borderR, textAlign: 'right', fontSize: 12, color: C.textDim, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtPct(b.rate, 0)}
+                </div>
+                <div style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, fontWeight: 500, color: isActive ? C.amber : C.mutedXDim, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmt$(b.commission)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function PercentileLadder({ commissionSpread, tiers, base, weeksPerYear }) {
+      const ladderRows = [10000, 15000, 20000, 25000, 30000, 35000, 40000, 50000, 60000, 75000, 100000].map(s => {
+        const c = calcCommission(s, tiers);
+        const yearly = c.total * weeksPerYear + base;
+        const marker = PERCENTILE_MARKERS.find(m => m.spread === s);
+        return { weekly: s, yearly, marker };
+      });
+
+      return (
+        <div>
+          <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12 }}>Comp Percentile Reference</div>
+          <div style={{ ...S.border, background: C.card }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', background: C.cardAlt }}>
+              <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, ...S.borderR }}>Weekly Spread</div>
+              <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim, ...S.borderR }}>Total Comp (annual)</div>
+              <div style={{ padding: '8px 16px', ...S.uppercase(10, 0.2), color: C.mutedDim }}>US Percentile</div>
+            </div>
+            {ladderRows.map((r, i) => {
+              const isCurrent = Math.abs(commissionSpread - r.weekly) < 500;
+              return (
+                <div key={i} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', ...S.borderT,
+                  background: isCurrent ? C.cardHover : 'transparent', transition: 'background 0.2s ease',
+                }}>
+                  <div style={{ padding: '10px 16px', ...S.borderR, fontSize: 12, color: C.textDim, fontVariantNumeric: 'tabular-nums' }}>
+                    {isCurrent && <span style={{ color: C.amber, marginRight: 8 }}>▸</span>}{fmt$(r.weekly)}
+                  </div>
+                  <div style={{
+                    padding: '10px 16px', ...S.borderR, fontSize: 12, fontVariantNumeric: 'tabular-nums',
+                    color: isCurrent ? C.amber : C.textDim, fontWeight: isCurrent ? 600 : 400,
+                  }}>{fmt$(r.yearly)}</div>
+                  <div style={{
+                    padding: '10px 16px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em',
+                    color: r.marker ? C.greenDk : C.mutedXDim,
+                  }}>
+                    {r.marker ? <><Award size={12} color={C.greenDk} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />{r.marker.label}</> : '—'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       MOUNT
+       ============================================================ */
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<InnovienCalculator />);
+  </script>
+</body>
+</html>
