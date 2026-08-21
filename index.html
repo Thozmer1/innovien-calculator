@@ -1038,10 +1038,12 @@
       const weeklyAM = weeklyBurden * 0.25;
       const weeklyRecruiter = weeklyBurden * 0.25;
 
-      // Burden % add-on = Total add-on cost ÷ Total placement pay
-      // The number that goes on the ESF gets added directly to the base burden multiplier.
+      // Burden % add-on = Employee-share of add-on cost (50%) ÷ Total placement pay
+      // Only the 50% employee portion flows through the placement's ESF burden;
+      // the 50% company share is absorbed by the company directly, not the placement.
       const totalPlacementPay = payRate * hours * placementWeeks;
-      const burdenPctAddon = totalPlacementPay > 0 ? totalCost / totalPlacementPay : 0;
+      const employeeShareCost = totalCost * 0.50;
+      const burdenPctAddon = totalPlacementPay > 0 ? employeeShareCost / totalPlacementPay : 0;
       const canComputeBurden = totalPlacementPay > 0 && totalCost > 0;
 
       const activeItems = items.filter(i => (parseFloat(i.amount) || 0) > 0).length;
@@ -1066,7 +1068,7 @@
               </div>
               <div style={{ fontSize: 15, color: C.textDim, lineHeight: 1.5 }}>
                 {canComputeBurden
-                  ? <>Add this on top of the placement's baseline burden multiplier when submitting the ESF. Denominator: {fmt$(totalCost)} ÷ ({placementWeeks} wks × {hours} hrs × {fmt$d(payRate)}) = {fmt$(totalPlacementPay)} total placement pay.</>
+                  ? <>Only the 50% employee share flows through the placement — the company absorbs its 50% directly. Numerator: {fmt$(totalCost)} × 50% = {fmt$(employeeShareCost)}. Denominator: {placementWeeks} wks × {hours} hrs × {fmt$d(payRate)} = {fmt$(totalPlacementPay)} total placement pay.</>
                   : <>Enter pay rate, hours, placement duration, and at least one line item to compute the burden add-on for the ESF.</>}
               </div>
             </div>
@@ -1164,7 +1166,7 @@
           </div>
 
           <div style={{ fontSize: 11, color: C.mutedDim, lineHeight: 1.7 }}>
-            <span style={{ color: C.muted, fontWeight: 600 }}>How to use:</span> Enter the placement's pay rate, hours per week, and duration. Add each approved cost as a line item. The <strong style={{ color: C.expense }}>Burden % to Add on the ESF</strong> is the number you tack on to the baseline burden when submitting the placement — e.g., a 1.22 W-2-no-benefits baseline plus a +10.26% add-on becomes 1.32 on the ESF. The Cost Split below shows the total dollar responsibility for each party (50% Company, 25% AM, 25% Recruiter).
+            <span style={{ color: C.muted, fontWeight: 600 }}>How to use:</span> Enter the placement's pay rate, hours per week, and duration. Add each approved cost as a line item. The <strong style={{ color: C.expense }}>Burden % to Add on the ESF</strong> is what you tack on to the baseline burden when submitting the placement — it only reflects the 50% employee share, since the company covers its 50% outside the placement. Example: $8,000 in add-ons at $75/hr × 40 hrs × 26 wks → $4,000 employee portion ÷ $78,000 placement pay = +5.13% burden on the ESF (a 1.22 W-2-no-benefits baseline becomes 1.2713). The Cost Split below shows the total dollar responsibility for each party (50% Company, 25% AM, 25% Recruiter).
           </div>
         </div>
       );
