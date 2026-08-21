@@ -34,6 +34,14 @@
     .input-line-amber:focus  { border-bottom-color: #B8860B; }
     .input-line-olive:focus  { border-bottom-color: #525C46; }
     .input-line-forest:focus { border-bottom-color: #3D5A1F; }
+    .input-line-expense, .input-line-expense-inline {
+      border-bottom: 2px dashed #B4C99A;
+      transition: border-color 0.15s ease, border-bottom-style 0.15s ease;
+      padding-bottom: 2px;
+    }
+    .input-line-expense:focus, .input-line-expense-inline:focus {
+      border-bottom-style: solid; border-bottom-color: #7A5C3D; outline: none;
+    }
     @keyframes pulse-glow {
       0%, 100% { box-shadow: 0 0 0 1px rgba(176,221,102,0.35), 0 0 24px -8px rgba(176,221,102,0.55); }
       50%      { box-shadow: 0 0 0 1px rgba(176,221,102,0.55), 0 0 32px -4px rgba(176,221,102,0.75); }
@@ -129,6 +137,7 @@
       amber: '#B8860B',  // Commission accent
       purple: '#525C46', // Nearshore accent
       forest: '#3D5A1F', // Federal accent — deep forest green
+      expense: '#7A5C3D',// Add-Ons accent — tobacco brown (cost/expense)
       red: '#8B4513',    // Negatives (no red fills per brand)
     };
     const FONT = "Calibri, 'Trebuchet MS', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
@@ -166,6 +175,9 @@
     const TrendingUp   = Icon(<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>);
     const Globe        = Icon(<><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>);
     const Shield       = Icon(<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>);
+    const Package      = Icon(<><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></>);
+    const Plus         = Icon(<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>);
+    const Trash2       = Icon(<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1.35 13.489a2 2 0 0 1-2 1.792l-9.317-.001a2 2 0 0 1-1.99-1.79L3 6h16z"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></>);
     const ArrowRight   = Icon(<><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>);
     const Award        = Icon(<><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></>);
     const ChevronDown  = Icon(<polyline points="6 9 12 15 18 9"/>);
@@ -261,6 +273,13 @@
       const [fedPayRate, setFedPayRate]   = useState(65);
       const [fedHours, setFedHours]       = useState(40);
 
+      const [addOnPlacementWeeks, setAddOnPlacementWeeks] = useState(26);
+      const [addOnItems, setAddOnItems] = useState([
+        { id: 1, desc: 'Signing Bonus',    amount: 0 },
+        { id: 2, desc: 'Laptop',           amount: 0 },
+        { id: 3, desc: 'Software License', amount: 0 },
+      ]);
+
       const [role, setRole] = useState('AM');
       const [commissionSpread, setCommissionSpread] = useState(20000);
 
@@ -273,6 +292,12 @@
         setBillRate(118); setPayRate(75); setHours(40);
         setNsBillRate(100); setNsHours(160); setNsPayRate(60);
         setFedBillRate(115); setFedPayRate(65); setFedHours(40);
+        setAddOnPlacementWeeks(26);
+        setAddOnItems([
+          { id: 1, desc: 'Signing Bonus',    amount: 0 },
+          { id: 2, desc: 'Laptop',           amount: 0 },
+          { id: 3, desc: 'Software License', amount: 0 },
+        ]);
         setCommissionSpread(20000);
       };
 
@@ -309,6 +334,12 @@
                 hours={fedHours}       setHours={setFedHours}
                 domSettings={SETTINGS.domestic}
                 onUseInCommission={sendToCommission}
+              />
+            )}
+            {tab === 'addons' && (
+              <AddOnsView
+                placementWeeks={addOnPlacementWeeks} setPlacementWeeks={setAddOnPlacementWeeks}
+                items={addOnItems} setItems={setAddOnItems}
               />
             )}
             {tab === 'commission' && (
@@ -374,6 +405,7 @@
         { id: 'domestic',   icon: TrendingUp, label: 'Domestic Spread',   accent: C.teal },
         { id: 'federal',    icon: Shield,     label: 'Federal Placement', accent: C.forest },
         { id: 'nearshore',  icon: Globe,      label: 'Nearshore Spread',  accent: C.purple },
+        { id: 'addons',     icon: Package,    label: 'Add-Ons',           accent: C.expense },
         { id: 'commission', icon: Calculator, label: 'Weekly Commission', accent: C.amber },
       ];
       return (
@@ -972,6 +1004,141 @@
               })}
             </div>
           ))}
+        </div>
+      );
+    }
+
+    /* ============================================================
+       ADD-ONS VIEW
+       Signing bonuses, cover payments, devices, software licenses —
+       any approved cost added to a placement.
+       Split: 50% Company / 25% AM / 25% Recruiter.
+       Amortized over placement duration for a per-week burden.
+       ============================================================ */
+    function AddOnsView({ placementWeeks, setPlacementWeeks, items, setItems }) {
+      const updateItem = (id, field, value) => {
+        setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+      };
+      const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+      const addItem = () => setItems(prev => [...prev, { id: Date.now(), desc: '', amount: 0 }]);
+
+      const totalCost = items.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+      const companyShare = totalCost * 0.50;
+      const amShare = totalCost * 0.25;
+      const recruiterShare = totalCost * 0.25;
+
+      const weeklyBurden = placementWeeks > 0 ? totalCost / placementWeeks : 0;
+      const weeklyCompany = weeklyBurden * 0.50;
+      const weeklyAM = weeklyBurden * 0.25;
+      const weeklyRecruiter = weeklyBurden * 0.25;
+
+      const activeItems = items.filter(i => (parseFloat(i.amount) || 0) > 0).length;
+
+      return (
+        <div className="fade-in">
+          {/* Top row: placement duration input + totals */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <InputCell label="Placement Duration" suffix="WKS" value={placementWeeks} setValue={setPlacementWeeks} step={1} isCount accent={C.expense} focusClass="input-line-expense" />
+            <DerivedStat label="Total Approved Cost" value={fmt$(totalCost)} sub={`${activeItems} line item${activeItems !== 1 ? 's' : ''} with value`} accent={totalCost > 0 ? C.expense : C.mutedDim} />
+            <DerivedStat label="Weekly Amortized Burden" value={fmt$(weeklyBurden)} sub={placementWeeks > 0 ? `Total ÷ ${placementWeeks} weeks` : 'set placement duration'} accent={weeklyBurden > 0 ? C.expense : C.mutedDim} />
+          </div>
+
+          {/* Line items */}
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div>
+              <div style={S.uppercase(10, 0.3)}>Approved Line Items</div>
+              <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+                Anything Innovien covers to get the consultant on contract — bonuses, devices, licenses, cover payments.
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: C.muted }}>Only items with an amount &gt; 0 count toward the total</div>
+          </div>
+
+          <div style={{ ...S.border, marginBottom: 32 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 60px', background: C.cardAlt }}>
+              <div style={{ padding: '10px 16px', ...S.uppercase(10, 0.25), color: C.mutedDim, ...S.borderR }}>Description</div>
+              <div style={{ padding: '10px 16px', ...S.uppercase(10, 0.25), color: C.mutedDim, textAlign: 'right', ...S.borderR }}>Amount</div>
+              <div style={{ padding: '10px 16px' }}></div>
+            </div>
+            {items.map(item => (
+              <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr 200px 60px', ...S.borderT, background: C.input }}>
+                <input value={item.desc}
+                  onChange={e => updateItem(item.id, 'desc', e.target.value)}
+                  placeholder="e.g. Signing bonus, laptop, license"
+                  style={{
+                    background: 'transparent', border: 'none', ...S.borderR,
+                    color: C.text, fontSize: 14, padding: '14px 16px', outline: 'none', width: '100%', ...S.mono,
+                  }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', ...S.borderR, padding: '10px 16px' }}>
+                  <span style={{ fontSize: 15, color: C.muted, marginRight: 6 }}>$</span>
+                  <input type="number" value={item.amount} step={100}
+                    onChange={e => updateItem(item.id, 'amount', parseFloat(e.target.value) || 0)}
+                    className="input-line-expense-inline"
+                    style={{
+                      background: 'transparent', border: 'none',
+                      color: C.expense, fontSize: 16, fontWeight: 700,
+                      padding: '4px 0', outline: 'none', width: '100%', textAlign: 'right',
+                      fontVariantNumeric: 'tabular-nums', ...S.mono,
+                    }} />
+                </div>
+                <button onClick={() => removeItem(item.id)}
+                  style={{
+                    background: 'transparent', border: 'none', color: C.mutedDim, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  title="Remove line item">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            <button onClick={addItem}
+              style={{
+                width: '100%', padding: '12px', fontSize: 11, textTransform: 'uppercase',
+                letterSpacing: '0.08em', color: C.expense, fontWeight: 600,
+                background: C.input, border: 'none', borderTop: `1px solid ${C.border}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...S.mono,
+              }}>
+              <Plus size={12} /> Add line item
+            </button>
+          </div>
+
+          {/* Cost sharing split */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={S.uppercase(10, 0.3)}>Cost Split — 50% Company · 50% Employees (AM + Recruiter each 25%)</div>
+            <div style={{ fontSize: 15, color: C.textDim, marginTop: 4 }}>
+              Total dollar amount each party absorbs, plus the amortized per-week burden across the {placementWeeks}-week placement.
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
+            <ShareCard label="Company · 50%" total={companyShare} weekly={weeklyCompany} placementWeeks={placementWeeks} />
+            <ShareCard label="AM · 25%"       total={amShare}       weekly={weeklyAM}       placementWeeks={placementWeeks} />
+            <ShareCard label="Recruiter · 25%" total={recruiterShare} weekly={weeklyRecruiter} placementWeeks={placementWeeks} />
+          </div>
+
+          <div style={{ fontSize: 11, color: C.mutedDim, lineHeight: 1.7 }}>
+            <span style={{ color: C.muted, fontWeight: 600 }}>How to use:</span> Enter each approved cost, set the placement duration, and check the split. The weekly amortized burden shows what the add-ons effectively deduct from the placement's weekly spread — apply it to the AM's and Recruiter's commission if the deal needs to reflect their share.
+          </div>
+        </div>
+      );
+    }
+
+    function ShareCard({ label, total, weekly, placementWeeks }) {
+      return (
+        <div style={{ background: C.card, padding: '20px 24px' }}>
+          <div style={{ ...S.uppercase(10, 0.3), marginBottom: 12, color: C.expense }}>{label}</div>
+          <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: total > 0 ? C.expense : C.mutedDim, fontVariantNumeric: 'tabular-nums' }}>
+            {fmt$(total)}
+          </div>
+          <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>total absorbed</div>
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.borderLt}` }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: weekly > 0 ? C.text : C.mutedDim, fontVariantNumeric: 'tabular-nums' }}>
+              {fmt$d(weekly)}/wk
+            </div>
+            <div style={{ fontSize: 10, color: C.mutedDim, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              amortized over {placementWeeks} wks
+            </div>
+          </div>
         </div>
       );
     }
