@@ -273,6 +273,8 @@
       const [fedPayRate, setFedPayRate]   = useState(65);
       const [fedHours, setFedHours]       = useState(40);
 
+      const [addOnPayRate, setAddOnPayRate]               = useState(75);
+      const [addOnHours, setAddOnHours]                   = useState(40);
       const [addOnPlacementWeeks, setAddOnPlacementWeeks] = useState(26);
       const [addOnItems, setAddOnItems] = useState([
         { id: 1, desc: 'Signing Bonus',    amount: 0 },
@@ -292,6 +294,8 @@
         setBillRate(118); setPayRate(75); setHours(40);
         setNsBillRate(100); setNsHours(160); setNsPayRate(60);
         setFedBillRate(115); setFedPayRate(65); setFedHours(40);
+        setAddOnPayRate(75);
+        setAddOnHours(40);
         setAddOnPlacementWeeks(26);
         setAddOnItems([
           { id: 1, desc: 'Signing Bonus',    amount: 0 },
@@ -338,8 +342,10 @@
             )}
             {tab === 'addons' && (
               <AddOnsView
+                payRate={addOnPayRate}               setPayRate={setAddOnPayRate}
+                hours={addOnHours}                   setHours={setAddOnHours}
                 placementWeeks={addOnPlacementWeeks} setPlacementWeeks={setAddOnPlacementWeeks}
-                items={addOnItems} setItems={setAddOnItems}
+                items={addOnItems}                   setItems={setAddOnItems}
               />
             )}
             {tab === 'commission' && (
@@ -1015,7 +1021,7 @@
        Split: 50% Company / 25% AM / 25% Recruiter.
        Amortized over placement duration for a per-week burden.
        ============================================================ */
-    function AddOnsView({ placementWeeks, setPlacementWeeks, items, setItems }) {
+    function AddOnsView({ payRate, setPayRate, hours, setHours, placementWeeks, setPlacementWeeks, items, setItems }) {
       const updateItem = (id, field, value) => {
         setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
       };
@@ -1032,13 +1038,54 @@
       const weeklyAM = weeklyBurden * 0.25;
       const weeklyRecruiter = weeklyBurden * 0.25;
 
+      // Burden % add-on = Total add-on cost ÷ Total placement pay
+      // The number that goes on the ESF gets added directly to the base burden multiplier.
+      const totalPlacementPay = payRate * hours * placementWeeks;
+      const burdenPctAddon = totalPlacementPay > 0 ? totalCost / totalPlacementPay : 0;
+      const canComputeBurden = totalPlacementPay > 0 && totalCost > 0;
+
       const activeItems = items.filter(i => (parseFloat(i.amount) || 0) > 0).length;
 
       return (
         <div className="fade-in">
-          {/* Top row: placement duration input + totals */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
-            <InputCell label="Placement Duration" suffix="WKS" value={placementWeeks} setValue={setPlacementWeeks} step={1} isCount accent={C.expense} focusClass="input-line-expense" />
+          {/* Row 1: Placement inputs (3 editable cells) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 16 }}>
+            <InputCell label="Pay Rate"           suffix="/ HR" value={payRate}          setValue={setPayRate}          step={0.50} accent={C.expense} focusClass="input-line-expense" />
+            <InputCell label="Hours / Week"       suffix="HRS"  value={hours}            setValue={setHours}            step={1} isCount accent={C.expense} focusClass="input-line-expense" />
+            <InputCell label="Placement Duration" suffix="WKS"  value={placementWeeks}   setValue={setPlacementWeeks}   step={1} isCount accent={C.expense} focusClass="input-line-expense" />
+          </div>
+
+          {/* Headline burden % card — the number that goes on the ESF */}
+          <div style={{
+            ...S.border, background: C.card, padding: '24px 28px', marginBottom: 16,
+            display: 'grid', gridTemplateColumns: '1fr 220px', gap: 20, alignItems: 'center',
+          }}>
+            <div>
+              <div style={{ ...S.uppercase(11, 0.28), color: C.expense, marginBottom: 8 }}>
+                Burden % to Add on the ESF
+              </div>
+              <div style={{ fontSize: 15, color: C.textDim, lineHeight: 1.5 }}>
+                {canComputeBurden
+                  ? <>Add this on top of the placement's baseline burden multiplier when submitting the ESF. Denominator: {fmt$(totalCost)} ÷ ({placementWeeks} wks × {hours} hrs × {fmt$d(payRate)}) = {fmt$(totalPlacementPay)} total placement pay.</>
+                  : <>Enter pay rate, hours, placement duration, and at least one line item to compute the burden add-on for the ESF.</>}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{
+                fontSize: 52, fontWeight: 800, lineHeight: 1,
+                color: canComputeBurden ? C.expense : C.mutedXDim,
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {canComputeBurden ? `+${(burdenPctAddon * 100).toFixed(2)}%` : '—'}
+              </div>
+              <div style={{ ...S.uppercase(10, 0.2), color: C.mutedDim, marginTop: 8 }}>
+                {canComputeBurden ? `= +${burdenPctAddon.toFixed(4)} to burden multiplier` : 'awaiting inputs'}
+              </div>
+            </div>
+          </div>
+
+          {/* Context stats: total cost, weekly burden */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.border, ...S.border, marginBottom: 32 }}>
             <DerivedStat label="Total Approved Cost" value={fmt$(totalCost)} sub={`${activeItems} line item${activeItems !== 1 ? 's' : ''} with value`} accent={totalCost > 0 ? C.expense : C.mutedDim} />
             <DerivedStat label="Weekly Amortized Burden" value={fmt$(weeklyBurden)} sub={placementWeeks > 0 ? `Total ÷ ${placementWeeks} weeks` : 'set placement duration'} accent={weeklyBurden > 0 ? C.expense : C.mutedDim} />
           </div>
@@ -1117,7 +1164,7 @@
           </div>
 
           <div style={{ fontSize: 11, color: C.mutedDim, lineHeight: 1.7 }}>
-            <span style={{ color: C.muted, fontWeight: 600 }}>How to use:</span> Enter each approved cost, set the placement duration, and check the split. The weekly amortized burden shows what the add-ons effectively deduct from the placement's weekly spread — apply it to the AM's and Recruiter's commission if the deal needs to reflect their share.
+            <span style={{ color: C.muted, fontWeight: 600 }}>How to use:</span> Enter the placement's pay rate, hours per week, and duration. Add each approved cost as a line item. The <strong style={{ color: C.expense }}>Burden % to Add on the ESF</strong> is the number you tack on to the baseline burden when submitting the placement — e.g., a 1.22 W-2-no-benefits baseline plus a +10.26% add-on becomes 1.32 on the ESF. The Cost Split below shows the total dollar responsibility for each party (50% Company, 25% AM, 25% Recruiter).
           </div>
         </div>
       );
